@@ -22,19 +22,23 @@ import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
+import org.coloniesplus.coloniesplus.Config;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,11 +54,12 @@ public final class ConversionPlanner
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * Material types that can stand in for one another, e.g. spruce planks for oak planks or
-     * white wool for red wool.
+     * Material types that can stand in for one another, e.g. spruce planks for oak planks,
+     * spruce logs for oak logs or white wool for red wool.
      */
     private static final List<TagKey<Item>> FAMILIES = List.of(
         ItemTags.PLANKS,
+        ItemTags.LOGS,
         ItemTags.STONE_CRAFTING_MATERIALS,
         ItemTags.STONE_TOOL_MATERIALS,
         ItemTags.WOOL,
@@ -73,6 +78,20 @@ public final class ConversionPlanner
      * crafting, and builders are the ones who use it, so they never need to hold one to convert.
      */
     private static final ResourceLocation BUILD_TOOL = ResourceLocation.fromNamespaceAndPath("structurize", "sceptergold");
+
+    /**
+     * Dirt with something on top. Any of them becomes plain dirt for free: no crafter hut, no
+     * waste, and whatever the builder's own switches are.
+     */
+    private static final List<Item> DIRT_SOURCES = List.of(Items.GRASS_BLOCK, Items.PODZOL, Items.MYCELIUM, Items.DIRT_PATH);
+
+    /**
+     * Recipes that make planks from something else (logs, wood, bamboo blocks), looked up once
+     * per set of loaded recipes. Server thread only.
+     */
+    @Nullable
+    private static RecipeManager plankCraftsRecipes;
+    private static List<SubCraft> plankCrafts = List.of();
 
     private ConversionPlanner()
     {
@@ -100,25 +119,48 @@ public final class ConversionPlanner
     @Nullable
     public static Plan plan(final IBuilding building, final ItemStack target, final int needed, final Options options, final ServerLevel level)
     {
-        if (target.isEmpty() || needed <= 0 || !options.any())
+        if (target.isEmpty() || needed <= 0 || (!options.any() && !target.is(Items.DIRT)))
+        {
+            return null;
+        }
+        return plan(building.getHandlers(), buildNeeds(building), CrafterProgress.of(building.getColony()), target, needed, options, level);
+    }
+
+    /**
+     * The same, from plain inventories: {@code buildNeeds} are what the build itself still needs
+     * (never used up), {@code progress} the colony's crafter levels. Used directly by the tests.
+     */
+    @Nullable
+    static Plan plan(
+        final List<IItemHandler> handlers,
+        final List<ItemStack> buildNeeds,
+        final CrafterProgress progress,
+        final ItemStack target,
+        final int needed,
+        final Options options,
+        final ServerLevel level)
+    {
+        if (target.isEmpty() || needed <= 0 || (!options.any() && !target.is(Items.DIRT)) || handlers.isEmpty())
         {
             return null;
         }
 
-        final List<IItemHandler> handlers = building.getHandlers();
-        if (handlers.isEmpty())
-        {
-            return null;
-        }
-
-        final List<SurplusSlot> surplus = findSurplus(building, handlers, target);
+        final List<SurplusSlot> surplus = findSurplus(buildNeeds, handlers, target);
         if (surplus.isEmpty())
         {
             return null;
         }
 
-        final CrafterProgress progress = CrafterProgress.of(building.getColony());
-        Plan plan = options.substitution() ? applyProgress(planSubstitution(target, needed, surplus), surplus, progress, false) : null;
+        if (target.is(Items.DIRT))
+        {
+            final Plan dirt = planDirt(target, needed, surplus);
+            if (dirt != null || !options.any())
+            {
+                return dirt;
+            }
+        }
+
+        Plan plan = options.substitution() ? applyProgress(planSubstitution(target, needed, surplus, level), surplus, progress, false) : null;
         if (plan == null && options.crafting())
         {
             plan = applyProgress(planCrafting(target, needed, surplus, options, level), surplus, progress, false);
@@ -196,7 +238,7 @@ public final class ConversionPlanner
         {
             return List.of();
         }
-        return summarize(findSurplus(building, handlers, ItemStack.EMPTY));
+        return summarize(findSurplus(buildNeeds(building), handlers, ItemStack.EMPTY));
     }
 
     /**
@@ -244,19 +286,32 @@ public final class ConversionPlanner
     }
 
     /**
-     * Lists every slot holding items beyond what the current build still needs. Items matching
-     * {@code excluded}, and the builder's own gear, are never treated as surplus.
+     * What the builder's current build still needs, with counts.
      */
-    private static List<SurplusSlot> findSurplus(final IBuilding building, final List<IItemHandler> handlers, final ItemStack excluded)
+    private static List<ItemStack> buildNeeds(final IBuilding building)
     {
-        final List<Reservation> reservations = new ArrayList<>();
+        final List<ItemStack> needs = new ArrayList<>();
         if (building.hasModule(BuildingModules.BUILDING_RESOURCES))
         {
             final BuildingResourcesModule resources = building.getModule(BuildingModules.BUILDING_RESOURCES);
             for (final BuildingBuilderResource resource : resources.getNeededResources().values())
             {
-                reservations.add(new Reservation(resource.getItemStack(), resource.getAmount()));
+                needs.add(resource.getItemStack().copyWithCount(resource.getAmount()));
             }
+        }
+        return needs;
+    }
+
+    /**
+     * Lists every slot holding items beyond what the current build still needs. Items matching
+     * {@code excluded}, and the builder's own gear, are never treated as surplus.
+     */
+    private static List<SurplusSlot> findSurplus(final List<ItemStack> buildNeeds, final List<IItemHandler> handlers, final ItemStack excluded)
+    {
+        final List<Reservation> reservations = new ArrayList<>();
+        for (final ItemStack need : buildNeeds)
+        {
+            reservations.add(new Reservation(need, need.getCount()));
         }
 
         final List<SurplusSlot> surplus = new ArrayList<>();
@@ -322,8 +377,46 @@ public final class ConversionPlanner
         totals.add(stack.copyWithCount(count));
     }
 
+    /**
+     * Turns spare grass blocks, podzol, mycelium or dirt paths into the dirt the build needs.
+     */
     @Nullable
-    private static Plan planSubstitution(final ItemStack target, final int needed, final List<SurplusSlot> surplus)
+    private static Plan planDirt(final ItemStack target, final int needed, final List<SurplusSlot> surplus)
+    {
+        final Plan plan = new Plan(target, needed);
+        int remaining = needed;
+        for (final SurplusSlot slot : surplus)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+            if (isDirtSource(slot.stack))
+            {
+                final int taken = Math.min(remaining, slot.spare);
+                plan.take(slot, taken);
+                remaining -= taken;
+            }
+        }
+        if (remaining > 0)
+        {
+            return null;
+        }
+        plan.outputs.add(target.copyWithCount(needed));
+        return plan;
+    }
+
+    static boolean isDirtSource(final ItemStack stack)
+    {
+        return DIRT_SOURCES.stream().anyMatch(stack::is);
+    }
+
+    /**
+     * Swaps spare material of the same family for the target. Planks that run short are sawn
+     * from spare logs of any type, e.g. spruce logs for oak planks.
+     */
+    @Nullable
+    private static Plan planSubstitution(final ItemStack target, final int needed, final List<SurplusSlot> surplus, final ServerLevel level)
     {
         if (!isSubstitutableMaterial(target))
         {
@@ -348,11 +441,27 @@ public final class ConversionPlanner
             remaining -= taken;
         }
 
+        if (remaining > 0 && target.is(ItemTags.PLANKS) && Config.logsToPlanks)
+        {
+            for (final SubCraft craft : plankCrafts(level))
+            {
+                while (remaining > 0 && available(surplus, plan, craft.input::test) >= craft.inputCount)
+                {
+                    for (int i = 0; i < craft.inputCount; i++)
+                    {
+                        takeOne(findSlot(surplus, plan, craft.input::test), plan);
+                    }
+                    remaining -= craft.result.getCount();
+                }
+            }
+        }
+
         if (remaining > 0)
         {
             return null;
         }
-        plan.outputs.add(target.copyWithCount(needed));
+        // Sawing a log can make a few planks more than asked for; they go to the hut as well.
+        plan.outputs.add(target.copyWithCount(needed - remaining));
         return plan;
     }
 
@@ -373,7 +482,7 @@ public final class ConversionPlanner
         {
             final CraftingRecipe recipe = holder.value();
             final ItemStack result = recipe.getResultItem(level.registryAccess());
-            if (result.isEmpty() || !ItemStack.isSameItemSameComponents(result, target))
+            if (result.isEmpty() || !ItemStack.isSameItemSameComponents(result, target) || (!Config.logsToPlanks && result.is(ItemTags.PLANKS)))
             {
                 continue;
             }
@@ -580,7 +689,7 @@ public final class ConversionPlanner
 
         for (final ItemStack leftover : plan.leftovers)
         {
-            if (!leftover.isEmpty() && rule.ingredient.test(leftover))
+            if (!leftover.isEmpty() && (rule.ingredient.test(leftover) || (rule.family != null && leftover.is(rule.family))))
             {
                 leftover.shrink(1);
                 return true;
@@ -589,7 +698,7 @@ public final class ConversionPlanner
 
         for (final SubCraft craft : rule.subCrafts())
         {
-            if (available(surplus, plan, craft.input::test) < craft.inputCount)
+            if ((!Config.logsToPlanks && craft.result.is(ItemTags.PLANKS)) || available(surplus, plan, craft.input::test) < craft.inputCount)
             {
                 continue;
             }
@@ -603,7 +712,79 @@ public final class ConversionPlanner
             }
             return true;
         }
+
+        // A plank ingredient accepts any planks, so logs of any type can be sawn for it.
+        if (ItemTags.PLANKS.equals(rule.family) && Config.logsToPlanks)
+        {
+            for (final SubCraft craft : plankCrafts(rule.level))
+            {
+                if (available(surplus, plan, craft.input::test) < craft.inputCount)
+                {
+                    continue;
+                }
+                for (int i = 0; i < craft.inputCount; i++)
+                {
+                    takeOne(findSlot(surplus, plan, craft.input::test), plan);
+                }
+                if (craft.result.getCount() > 1)
+                {
+                    addCounted(plan.leftovers, craft.result, craft.result.getCount() - 1);
+                }
+                return true;
+            }
+        }
         return false;
+    }
+
+    static void clearCaches()
+    {
+        plankCraftsRecipes = null;
+        plankCrafts = List.of();
+    }
+
+    /**
+     * Every crafting recipe that makes planks from a single kind of material, such as oak logs
+     * into oak planks. Looked up again when recipes are reloaded.
+     */
+    private static List<SubCraft> plankCrafts(final ServerLevel level)
+    {
+        final RecipeManager recipes = level.getRecipeManager();
+        if (recipes != plankCraftsRecipes)
+        {
+            plankCrafts = findSubCrafts(Ingredient.of(ItemTags.PLANKS), level);
+            plankCraftsRecipes = recipes;
+        }
+        return plankCrafts;
+    }
+
+    /**
+     * How many planks of {@code material} the builder could saw from spare logs: any logs with
+     * substitution on, only logs of the same wood with just crafting on.
+     */
+    static int planksFromSpare(final ItemStack material, final List<ItemStack> spare, final Options options, final ServerLevel level)
+    {
+        if (!material.is(ItemTags.PLANKS) || !options.any() || !Config.logsToPlanks)
+        {
+            return 0;
+        }
+        int planks = 0;
+        for (final ItemStack stack : spare)
+        {
+            if (stack.is(ItemTags.PLANKS))
+            {
+                continue;
+            }
+            for (final SubCraft craft : plankCrafts(level))
+            {
+                final boolean usable = options.substitution() || (options.crafting() && ItemStack.isSameItemSameComponents(craft.result, material));
+                if (usable && craft.input.test(stack))
+                {
+                    planks += stack.getCount() / craft.inputCount * craft.result.getCount();
+                    break;
+                }
+            }
+        }
+        return planks;
     }
 
     private static int available(final List<SurplusSlot> surplus, final Plan plan, final java.util.function.Predicate<ItemStack> matches)
@@ -755,7 +936,20 @@ public final class ConversionPlanner
 
     static boolean sharesMaterialFamily(final ItemStack first, final ItemStack second)
     {
-        return FAMILIES.stream().anyMatch(family -> first.is(family) && second.is(family));
+        return FAMILIES.stream().anyMatch(family -> first.is(family) && second.is(family)
+            && (family != ItemTags.LOGS || woodForm(first).equals(woodForm(second))));
+    }
+
+    /**
+     * Logs only swap for the same form, so a build keeps its look: a log for a log, wood (bark on
+     * all sides) for wood, and stripped for stripped. Read from the item's name, which vanilla and
+     * almost every mod follow: {@code stripped_}, and {@code _wood} or {@code _hyphae}.
+     */
+    private static String woodForm(final ItemStack stack)
+    {
+        final String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+        final boolean wood = path.endsWith("_wood") || path.endsWith("_hyphae");
+        return (path.contains("stripped") ? "stripped " : "") + (wood ? "wood" : "log");
     }
 
     /**
@@ -869,6 +1063,14 @@ public final class ConversionPlanner
         public ItemStack delivery()
         {
             return target.copyWithCount(needed);
+        }
+
+        /**
+         * Everything the plan puts back: the result, plus any leftovers and crafting remainders.
+         */
+        List<ItemStack> outputs()
+        {
+            return List.copyOf(outputs);
         }
 
         /**

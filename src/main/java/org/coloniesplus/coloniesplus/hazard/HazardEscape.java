@@ -4,14 +4,8 @@ import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
@@ -48,14 +42,24 @@ public final class HazardEscape
     private static final int ESCAPE_TIMEOUT_TICKS = 200;
 
     private static final int ARRIVED_RANGE   = 1;
-    private static final int SEARCH_RADIUS   = 8;
-    private static final int SEARCH_HEIGHT   = 3;
-    private static final int MIN_DISTANCE_SQ = 2;
+    /**
+     * How far "walk away from here" goes when no safe spot was found.
+     */
+    private static final int WALK_AWAY_DISTANCE = 8;
 
     /**
      * Server thread only. Weak, so citizens that unload or die are dropped.
      */
     private final Map<AbstractEntityCitizen, State> states = new WeakHashMap<>();
+
+    /**
+     * @return true while the citizen is being walked (or about to be moved) out of a hazard.
+     */
+    public boolean isEscaping(final AbstractEntityCitizen citizen)
+    {
+        final State state = states.get(citizen);
+        return state != null && (state.escapeTo != null || citizen.level().getGameTime() < state.walkingAwayUntil);
+    }
 
     @SubscribeEvent
     public void onDamage(final LivingDamageEvent.Post event)
@@ -111,7 +115,7 @@ public final class HazardEscape
         final long now = citizen.level().getGameTime();
         if (state.escapeTo == null)
         {
-            if (now - state.lastHit > RESET_TICKS)
+            if (now - state.lastHit > RESET_TICKS && now >= state.walkingAwayUntil)
             {
                 states.remove(citizen);
             }
@@ -127,12 +131,13 @@ public final class HazardEscape
 
     private void startEscape(final AbstractEntityCitizen citizen, final State state, final long now)
     {
-        final BlockPos safe = findSafeSpot(citizen.level(), citizen.blockPosition());
+        final BlockPos safe = SafeSpots.find(citizen.level(), citizen.blockPosition());
         if (safe == null)
         {
             LOGGER.debug("Citizen {} is stuck in a hazard at {} with no safe spot nearby", citizen.getName().getString(), citizen.blockPosition());
-            EntityNavigationUtils.walkAwayFrom(citizen, citizen.blockPosition(), SEARCH_RADIUS, 1.0);
+            EntityNavigationUtils.walkAwayFrom(citizen, citizen.blockPosition(), WALK_AWAY_DISTANCE, 1.0);
             state.firstHit = now;
+            state.walkingAwayUntil = now + TELEPORT_AFTER_TICKS;
             return;
         }
 
@@ -153,78 +158,11 @@ public final class HazardEscape
     private void finish(final AbstractEntityCitizen citizen, final State state)
     {
         // Out of the fire, so put the flames out rather than let them burn on for seconds.
-        if (state.burning && !citizen.isInLava() && !isHazard(citizen.level(), citizen.blockPosition()))
+        if (state.burning && !citizen.isInLava() && !SafeSpots.isHazard(citizen.level(), citizen.blockPosition()))
         {
             citizen.clearFire();
         }
         states.remove(citizen);
-    }
-
-    /**
-     * The nearest spot a citizen can stand on without touching a hazard, at least a block away.
-     */
-    @Nullable
-    private static BlockPos findSafeSpot(final Level level, final BlockPos from)
-    {
-        BlockPos best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (final BlockPos pos : BlockPos.betweenClosed(
-            from.offset(-SEARCH_RADIUS, -SEARCH_HEIGHT, -SEARCH_RADIUS),
-            from.offset(SEARCH_RADIUS, SEARCH_HEIGHT, SEARCH_RADIUS)))
-        {
-            final double distance = pos.distSqr(from);
-            if (distance < MIN_DISTANCE_SQ || distance >= bestDistance || !isSafe(level, pos))
-            {
-                continue;
-            }
-            best = pos.immutable();
-            bestDistance = distance;
-        }
-        return best;
-    }
-
-    private static boolean isSafe(final Level level, final BlockPos feet)
-    {
-        final BlockPos floor = feet.below();
-        final BlockState floorState = level.getBlockState(floor);
-        if (!floorState.isFaceSturdy(level, floor, Direction.UP) || isHazard(floorState) || !level.getFluidState(floor.above()).isEmpty())
-        {
-            return false;
-        }
-
-        for (final BlockPos body : new BlockPos[] {feet, feet.above()})
-        {
-            final BlockState state = level.getBlockState(body);
-            if (!state.getCollisionShape(level, body).isEmpty() || isHazard(state) || !level.getFluidState(body).isEmpty())
-            {
-                return false;
-            }
-            // Cactus hurts whatever brushes against its sides.
-            for (final Direction side : Direction.Plane.HORIZONTAL)
-            {
-                if (level.getBlockState(body.relative(side)).is(Blocks.CACTUS))
-                {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    private static boolean isHazard(final Level level, final BlockPos pos)
-    {
-        return isHazard(level.getBlockState(pos)) || isHazard(level.getBlockState(pos.below()));
-    }
-
-    private static boolean isHazard(final BlockState state)
-    {
-        return state.is(Blocks.CACTUS)
-            || state.is(BlockTags.FIRE)
-            || state.is(BlockTags.CAMPFIRES)
-            || state.is(Blocks.SWEET_BERRY_BUSH)
-            || state.is(Blocks.MAGMA_BLOCK)
-            || state.is(Blocks.WITHER_ROSE)
-            || state.getFluidState().is(FluidTags.LAVA);
     }
 
     private static boolean isHazardDamage(final DamageSource source)
@@ -246,6 +184,10 @@ public final class HazardEscape
         private long     lastHit;
         private long     escapeStart;
         private boolean  burning;
+        /**
+         * Walking away with no safe spot found counts as escaping until then.
+         */
+        private long     walkingAwayUntil;
         @Nullable
         private BlockPos escapeTo;
 

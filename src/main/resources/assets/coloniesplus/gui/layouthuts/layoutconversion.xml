@@ -29,16 +29,16 @@
               emptytext="$(coloniesplus.gui.conversion.needed.empty)" emptycolor="black">
             <view size="150 18">
                 <itemicon id="icon" size="16 16" pos="0 1"/>
-                <text id="label" size="94 18" pos="20 0" textalign="MIDDLE_LEFT" color="black"/>
-                <text id="count" size="34 18" pos="114 0" textalign="MIDDLE_RIGHT" color="black"/>
+                <text id="label" size="72 18" pos="18 0" textalign="MIDDLE_LEFT" color="black"/>
+                <text id="count" size="46 18" pos="92 0" textalign="MIDDLE_RIGHT" color="black"/>
             </view>
         </list>
         <list id="spare" size="150 52" pos="20 106" visible="false"
               emptytext="$(coloniesplus.gui.conversion.spare.empty)" emptycolor="black">
             <view size="150 18">
                 <itemicon id="icon" size="16 16" pos="0 1"/>
-                <text id="label" size="94 18" pos="20 0" textalign="MIDDLE_LEFT" color="black"/>
-                <text id="count" size="34 18" pos="114 0" textalign="MIDDLE_RIGHT" color="black"/>
+                <text id="label" size="72 18" pos="18 0" textalign="MIDDLE_LEFT" color="black"/>
+                <text id="count" size="46 18" pos="92 0" textalign="MIDDLE_RIGHT" color="black"/>
             </view>
         </list>
 

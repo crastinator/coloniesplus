@@ -11,7 +11,12 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import org.coloniesplus.coloniesplus.conversion.ConversionModule;
 import org.coloniesplus.coloniesplus.conversion.ConversionResolverFactory;
 import org.coloniesplus.coloniesplus.conversion.ConversionTicker;
+import org.coloniesplus.coloniesplus.citizens.HungryWorkers;
+import org.coloniesplus.coloniesplus.containers.ContainerReturn;
+import org.coloniesplus.coloniesplus.containers.RestaurantPantry;
+import org.coloniesplus.coloniesplus.couriers.CourierHorses;
 import org.coloniesplus.coloniesplus.hazard.HazardEscape;
+import org.coloniesplus.coloniesplus.hazard.StuckCitizens;
 import org.coloniesplus.coloniesplus.network.SetConversionTogglePayload;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
@@ -23,8 +28,14 @@ public class Coloniesplus {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerPayloads);
         NeoForge.EVENT_BUS.register(new ConversionTicker());
-        NeoForge.EVENT_BUS.register(new HazardEscape());
-        modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
+        final HazardEscape hazardEscape = new HazardEscape();
+        NeoForge.EVENT_BUS.register(hazardEscape);
+        NeoForge.EVENT_BUS.register(new StuckCitizens(hazardEscape));
+        NeoForge.EVENT_BUS.register(new ContainerReturn());
+        NeoForge.EVENT_BUS.register(new CourierHorses(hazardEscape));
+        NeoForge.EVENT_BUS.register(new HungryWorkers());
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.FEATURES_SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, Config.WORLD_SPEC);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -32,6 +43,7 @@ public class Coloniesplus {
         event.enqueueWork(() -> {
             StandardFactoryController.getInstance().registerNewFactory(new ConversionResolverFactory());
             ConversionModule.register();
+            RestaurantPantry.register();
         });
     }
 

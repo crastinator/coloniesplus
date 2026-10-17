@@ -9,6 +9,8 @@ import com.ldtteam.blockui.controls.Text;
 import com.ldtteam.blockui.views.ScrollingList;
 import com.minecolonies.core.client.gui.AbstractModuleWindow;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
@@ -23,6 +25,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * The "Material Conversion" tab in a builder's hut window: per-builder switches, the raw
@@ -50,6 +53,8 @@ public class ConversionModuleWindow extends AbstractModuleWindow<ConversionModul
 
     private static final ResourceLocation TAB_SHOWN  = ResourceLocation.parse("minecolonies:textures/gui/builderhut/builder_button_small.png");
     private static final ResourceLocation TAB_HIDDEN = ResourceLocation.parse("minecolonies:textures/gui/builderhut/builder_button_small_disabled.png");
+
+    private static final String ELLIPSIS = "…";
 
     private static final int COLOR_TAB_SHOWN  = 0x000000;
     private static final int COLOR_TAB_HIDDEN = 0xFFFFFF;
@@ -202,8 +207,17 @@ public class ConversionModuleWindow extends AbstractModuleWindow<ConversionModul
             {
                 final ConversionModule.NeededMaterial material = needed.get(index);
                 final int amount = material.material().getCount();
-                fillRow(rowPane, material.material(), Component.translatable("coloniesplus.gui.conversion.needed.count", material.spare(), amount));
-                rowPane.findPaneOfTypeByID("count", Text.class).setColors(material.spare() < amount ? COLOR_SHORT : COLOR_ENOUGH);
+                final Text countLabel = rowPane.findPaneOfTypeByID("count", Text.class);
+                Component count = Component.translatable("coloniesplus.gui.conversion.needed.count", compact(material.spare()), compact(amount));
+                if (Minecraft.getInstance().font.width(count) > countLabel.getWidth())
+                {
+                    // Very large numbers: just what is needed, with the full counts on hover.
+                    count = Component.literal(compact(amount));
+                }
+                fillRow(rowPane, material.material(), count);
+                countLabel.setColors(material.spare() < amount ? COLOR_SHORT : COLOR_ENOUGH);
+                PaneBuilders.tooltipBuilder().hoverPane(countLabel).build().setText(Component.translatable(
+                    "coloniesplus.gui.conversion.needed.count.tooltip", String.format("%,d", material.spare()), String.format("%,d", amount)));
             }
         });
     }
@@ -274,21 +288,69 @@ public class ConversionModuleWindow extends AbstractModuleWindow<ConversionModul
             public void updateElement(final int index, @NotNull final Pane rowPane)
             {
                 final ItemStack stack = spare.get(index);
-                fillRow(rowPane, stack, Component.literal(String.valueOf(stack.getCount())));
+                fillRow(rowPane, stack, Component.literal(compact(stack.getCount())));
             }
         });
     }
 
     /**
-     * Item name on the left, a number on the right; the full name shows on hover if it is cut off.
+     * Item name on the left, a number on the right. A name too long for its space is shortened
+     * with "…" so it never runs into the number; the full name shows on hover.
      */
     private static void fillRow(final Pane rowPane, final ItemStack stack, final Component count)
     {
         rowPane.findPaneOfTypeByID("icon", ItemIcon.class).setItem(stack.copyWithCount(1));
         final Text label = rowPane.findPaneOfTypeByID("label", Text.class);
-        label.setText(stack.getHoverName());
+        label.setText(fitWidth(stack.getHoverName(), label.getWidth()));
         PaneBuilders.tooltipBuilder().hoverPane(label).build().setText(stack.getHoverName());
         rowPane.findPaneOfTypeByID("count", Text.class).setText(count);
+    }
+
+    /**
+     * Shortens a name to fit, keeping its colours and styles.
+     */
+    private static Component fitWidth(final Component text, final int width)
+    {
+        final Font font = Minecraft.getInstance().font;
+        if (font.width(text) <= width)
+        {
+            return text;
+        }
+        final MutableComponent shortened = Component.empty();
+        font.substrByWidth(text, width - font.width(ELLIPSIS)).visit((style, part) -> {
+            shortened.append(Component.literal(part).withStyle(style));
+            return Optional.empty();
+        }, text.getStyle());
+        return shortened.append(Component.literal(ELLIPSIS).withStyle(text.getStyle()));
+    }
+
+    /**
+     * Keeps counts short enough for their column: 950, 1.9k, 15k, 1.5M. Always rounded down, so
+     * a smaller count never shows as more than a bigger one (1960 of 2000 reads "1.9k/2k").
+     */
+    private static String compact(final int count)
+    {
+        if (count < 1_000)
+        {
+            return String.valueOf(count);
+        }
+        if (count < 10_000)
+        {
+            return tenths(count / 100) + "k";
+        }
+        if (count < 1_000_000)
+        {
+            return count / 1_000 + "k";
+        }
+        return tenths(count / 100_000) + "M";
+    }
+
+    /**
+     * @return e.g. 19 as "1.9" and 20 as "2".
+     */
+    private static String tenths(final int tenths)
+    {
+        return tenths % 10 == 0 ? String.valueOf(tenths / 10) : tenths / 10 + "." + tenths % 10;
     }
 
     private void fillHistory()

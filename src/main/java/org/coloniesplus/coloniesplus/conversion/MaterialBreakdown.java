@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -110,20 +111,22 @@ final class MaterialBreakdown
 
     /**
      * How much of a raw material the builder has spare. With substitution on, spare planks or
-     * stone of another type in the same family count too.
+     * stone of another type in the same family count too, and planks count what spare logs would saw into.
      */
-    static int spareFor(final ItemStack material, final List<ItemStack> spare, final ConversionPlanner.Options options)
+    static int spareFor(final ItemStack material, final List<ItemStack> spare, final ConversionPlanner.Options options, final ServerLevel level)
     {
         final boolean family = options.substitution() && ConversionPlanner.isSubstitutableMaterial(material);
         int count = 0;
         for (final ItemStack stack : spare)
         {
-            if (ItemStack.isSameItemSameComponents(stack, material) || (family && ConversionPlanner.sharesMaterialFamily(material, stack)))
+            if (ItemStack.isSameItemSameComponents(stack, material)
+                || (family && ConversionPlanner.sharesMaterialFamily(material, stack))
+                || (material.is(Items.DIRT) && ConversionPlanner.isDirtSource(stack)))
             {
                 count += stack.getCount();
             }
         }
-        return count;
+        return count + ConversionPlanner.planksFromSpare(material, spare, options, level);
     }
 
     private void expand(final ItemStack item, final double amount, final List<ItemStack> chain)

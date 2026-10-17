@@ -15,6 +15,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.coloniesplus.coloniesplus.Config;
 import org.jetbrains.annotations.Nullable;
@@ -35,6 +36,15 @@ public final class ConversionTicker
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private int tickCounter;
+
+    /**
+     * Lets go of the stopped server's recipes, e.g. after quitting a single player world.
+     */
+    @SubscribeEvent
+    public void onServerStopped(final ServerStoppedEvent event)
+    {
+        ConversionPlanner.clearCaches();
+    }
 
     @SubscribeEvent
     public void onServerTick(final ServerTickEvent.Post event)
@@ -105,15 +115,15 @@ public final class ConversionTicker
         final List<ItemStack> spare,
         final CrafterProgress progress)
     {
+        final ServerLevel level = (ServerLevel) building.getColony().getWorld();
         final List<ItemStack> missing = MaterialBreakdown.missing(building);
-        final List<ItemStack> raw = module.rawMaterialsFor(missing,
-            () -> MaterialBreakdown.rawMaterials(missing, building, (ServerLevel) building.getColony().getWorld()));
+        final List<ItemStack> raw = module.rawMaterialsFor(missing, () -> MaterialBreakdown.rawMaterials(missing, building, level));
 
         final List<ConversionModule.NeededMaterial> needed = new ArrayList<>(raw.size());
         for (final ItemStack material : raw)
         {
             final int count = material.getCount() + progress.wasteFor(CrafterProgress.Trade.of(material), material.getCount());
-            needed.add(new ConversionModule.NeededMaterial(material.copyWithCount(count), MaterialBreakdown.spareFor(material, spare, module.options())));
+            needed.add(new ConversionModule.NeededMaterial(material.copyWithCount(count), MaterialBreakdown.spareFor(material, spare, module.options(), level)));
         }
         return needed;
     }
