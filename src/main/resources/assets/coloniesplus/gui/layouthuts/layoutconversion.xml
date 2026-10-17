@@ -1,0 +1,55 @@
+<window xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/ldtteam/BlockUI/version/main/src/main/resources/assets/blockui/gui/block_ui.xsd"
+    size="190 244">
+    <image source="minecolonies:textures/gui/builderhut/builder_paper.png" size="190 244"/>
+    <text size="130 11" pos="30 14" textalign="MIDDLE" color="black"
+          label="$(coloniesplus.gui.conversion)"/>
+
+    <view size="190 244" pos="0 0">
+        <button id="substitution" pos="20 30" size="14 15"
+                source="minecolonies:textures/gui/builderhut/builder_button_mini_check.png"
+                disabled="minecolonies:textures/gui/builderhut/builder_button_mini_disabled.png"/>
+        <text id="substitutionlabel" size="130 15" pos="38 30" textalign="MIDDLE_LEFT" color="black"
+              label="$(coloniesplus.gui.conversion.substitution)"/>
+
+        <button id="crafting" pos="20 48" size="14 15"
+                source="minecolonies:textures/gui/builderhut/builder_button_mini_check.png"
+                disabled="minecolonies:textures/gui/builderhut/builder_button_mini_disabled.png"/>
+        <text id="craftinglabel" size="130 15" pos="38 48" textalign="MIDDLE_LEFT" color="black"
+              label="$(coloniesplus.gui.conversion.crafting)"/>
+
+        <text id="status" size="150 20" pos="20 66" color="gray" wrap="true"/>
+
+        <button id="showneeded" size="64 17" pos="20 86"
+                source="minecolonies:textures/gui/builderhut/builder_button_small.png"
+                label="$(coloniesplus.gui.conversion.needed)"/>
+        <button id="showspare" size="64 17" pos="86 86"
+                source="minecolonies:textures/gui/builderhut/builder_button_small.png"
+                label="$(coloniesplus.gui.conversion.spare)"/>
+        <list id="needed" size="150 52" pos="20 106"
+              emptytext="$(coloniesplus.gui.conversion.needed.empty)" emptycolor="black">
+            <view size="150 18">
+                <itemicon id="icon" size="16 16" pos="0 1"/>
+                <text id="label" size="94 18" pos="20 0" textalign="MIDDLE_LEFT" color="black"/>
+                <text id="count" size="34 18" pos="114 0" textalign="MIDDLE_RIGHT" color="black"/>
+            </view>
+        </list>
+        <list id="spare" size="150 52" pos="20 106" visible="false"
+              emptytext="$(coloniesplus.gui.conversion.spare.empty)" emptycolor="black">
+            <view size="150 18">
+                <itemicon id="icon" size="16 16" pos="0 1"/>
+                <text id="label" size="94 18" pos="20 0" textalign="MIDDLE_LEFT" color="black"/>
+                <text id="count" size="34 18" pos="114 0" textalign="MIDDLE_RIGHT" color="black"/>
+            </view>
+        </list>
+
+        <text size="150 11" pos="20 162" color="black"
+              label="$(coloniesplus.gui.conversion.history)"/>
+        <list id="history" size="150 56" pos="20 174"
+              emptytext="$(coloniesplus.gui.conversion.history.empty)" emptycolor="gray">
+            <view size="150 22">
+                <itemicon id="icon" size="16 16" pos="0 3"/>
+                <text id="label" size="130 22" pos="20 0" textalign="MIDDLE_LEFT" color="black" wrap="true"/>
+            </view>
+        </list>
+    </view>
+</window>

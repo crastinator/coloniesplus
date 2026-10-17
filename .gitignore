@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Local game run directory (worlds, logs, configs)
+run/
+runs/
+
+# OS
+.DS_Store
+Thumbs.db
