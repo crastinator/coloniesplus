@@ -1,0 +1,40 @@
+name: Suggestion
+description: Suggest a new feature or a change to coloniesPlus
+title: "[Suggestion] "
+labels: ["suggestion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! coloniesPlus aims to fix common MineColonies annoyances, so suggestions along those lines fit best.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem or annoyance does this solve?
+      description: Describe what happens in your colony today and why it gets in the way.
+      placeholder: e.g. My builder keeps waiting for glass even though I have sand and a smeltery.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like coloniesPlus to do?
+      description: Describe the change or feature you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Workarounds you use now, or other ways this could be solved.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions (optional)
+      description: Minecraft, MineColonies and coloniesPlus versions, if relevant.
+      placeholder: e.g. MC 1.21.1, MineColonies 1.1.x, coloniesPlus 0.2.0
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, mod interactions, or other context.
