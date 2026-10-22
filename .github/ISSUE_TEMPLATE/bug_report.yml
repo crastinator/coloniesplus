@@ -1,0 +1,74 @@
+name: Bug report
+description: Report something in coloniesPlus that isn't working right
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! coloniesPlus is an early test build, so detailed reports help a lot.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected to happen instead.
+      placeholder: e.g. My builder converted spruce planks to oak planks even though the build still needed the spruce.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can the bug be triggered?
+      placeholder: |
+        1. Build a sawmill
+        2. Give the builder ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      placeholder: e.g. 1.21.1
+    validations:
+      required: true
+  - type: input
+    id: minecolonies-version
+    attributes:
+      label: MineColonies version
+    validations:
+      required: true
+  - type: input
+    id: coloniesplus-version
+    attributes:
+      label: coloniesPlus version
+      placeholder: e.g. 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where does it happen?
+      options:
+        - Singleplayer
+        - Multiplayer server
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other mods
+      description: List other mods installed, or link a modpack.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or crash report
+      description: Paste the relevant part of latest.log or the crash report, or a link to it (e.g. mclo.gs).
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, videos, or other context.
